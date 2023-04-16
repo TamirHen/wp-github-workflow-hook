@@ -5,7 +5,7 @@
  */
 
 /*
-Plugin Name: GitHub Trigger Workflow
+Plugin Name: GitHub Workflow Deploy
 Plugin URI: https://github.com/TamirHen/wp-github-workflow-hook
 Description: WordPress plugin for triggering a GitHub action to deploy a static site
 
@@ -55,7 +55,7 @@ class github_workflow_deploy
         add_action('admin_init', array($this, 'setup_schedule_fields'));
         add_action('admin_init', array($this, 'setup_developer_fields'));
         add_action('admin_footer', array($this, 'run_the_mighty_javascript'));
-        add_action('admin_bar_menu', array($this, 'add_to_admin_bar'), 2);
+        add_action('admin_bar_menu', array($this, 'add_to_admin_bar'), 90);
 
         // Listen to cron scheduler option updates
         add_action('update_option_enable_scheduled_builds', array($this, 'build_schedule_options_updated'), 10, 3);
@@ -308,7 +308,7 @@ class github_workflow_deploy
             $slug = 'manual_deploy';
             $callback = array($this, 'plugin_settings_page_content');
             $icon = 'dashicons-admin-plugins';
-            $position = 100;
+            $position = 2;
 
             add_menu_page($page_title, $menu_title, $capability, $slug, $callback, $icon, $position);
         }
