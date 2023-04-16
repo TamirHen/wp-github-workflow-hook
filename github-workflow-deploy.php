@@ -1,18 +1,18 @@
 <?php
 
 /**
- * @package Vercel Deploy Hooks
+ * @package GitHub Trigger Workflow
  */
 
 /*
-Plugin Name: Deploy Hooks
-Plugin URI: https://github.com/aderaaij/wp-vercel-deploy-hooks
-Description: WordPress plugin for building your Vercel static site on command, post publish/update or scheduled
-Version: 1.4.2
-Author: Arden de Raaij
-Author URI: https://arden.nl
+Plugin Name: GitHub Trigger Workflow
+Plugin URI: https://github.com/TamirHen/wp-github-workflow-hook
+Description: WordPress plugin for triggering a GitHub action to deploy a static site
+
+Version: 1.0.1
+Author: Tamir Hen
 License: GPLv3 or later
-Text Domain: vercel-deploy-hooks
+Text Domain: github-workflow-hook
 */
 
 /*
@@ -32,7 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 defined('ABSPATH') or die('You do not have access to this file');
 
-class vdhp_vercel_webhook_deploy
+class github_workflow_deploy
 {
 
     /**
@@ -55,7 +55,7 @@ class vdhp_vercel_webhook_deploy
         add_action('admin_init', array($this, 'setup_schedule_fields'));
         add_action('admin_init', array($this, 'setup_developer_fields'));
         add_action('admin_footer', array($this, 'run_the_mighty_javascript'));
-        add_action('admin_bar_menu', array($this, 'add_to_admin_bar'), 90);
+        add_action('admin_bar_menu', array($this, 'add_to_admin_bar'), 2);
 
         // Listen to cron scheduler option updates
         add_action('update_option_enable_scheduled_builds', array($this, 'build_schedule_options_updated'), 10, 3);
@@ -69,7 +69,7 @@ class vdhp_vercel_webhook_deploy
         add_filter('cron_schedules', array($this, 'custom_cron_intervals'));
 
         // Link event to function
-        add_action('scheduled_vercel_build', array($this, 'fire_vercel_webhook'));
+        add_action('scheduled_build', array($this, 'fire_github_deploy'));
 
         // add actions for deploying on post/page update and publish
         add_action('publish_future_post', array($this, ' vb_webhook_future_post'), 10);
@@ -78,7 +78,7 @@ class vdhp_vercel_webhook_deploy
 
     public function is_using_constant_webhook()
     {
-        return defined("WP_VERCEL_WEBHOOK_ADDRESS") && !empty(WP_VERCEL_WEBHOOK_ADDRESS);
+        return defined("WP_WEBHOOK_ADDRESS") && !empty(WP_WEBHOOK_ADDRESS);
     }
 
     /**
@@ -88,10 +88,28 @@ class vdhp_vercel_webhook_deploy
     public function get_webhook_address()
     {
         if ($this->is_using_constant_webhook()) {
-            return WP_VERCEL_WEBHOOK_ADDRESS;
+            return WP_WEBHOOK_ADDRESS;
         } else {
             return get_option('webhook_address');
         }
+    }
+
+    /**
+     * Gets the GitHub access_token
+     * @return ?string
+     */
+    public function get_github_access_token()
+    {
+        return get_option('github_access_token');
+    }
+
+    /**
+     * Gets the GitHub deploy branch
+     * @return ?string
+     */
+    public function get_github_deploy_branch()
+    {
+        return get_option('github_deploy_branch');
     }
 
     /**
@@ -102,11 +120,11 @@ class vdhp_vercel_webhook_deploy
     public function plugin_settings_page_content()
     { ?>
         <div class="wrap">
-            <h2><?php _e('Vercel Deploy Hooks', 'vercel-deploy-hooks'); ?></h2>
+            <h2><?php _e('GitHub Trigger Workflow', 'github-workflow-deploy'); ?></h2>
             <hr>
-            <h3><?php _e('Build Website', 'vercel-deploy-hooks'); ?></h3>
+            <h3><?php _e('Build Website', 'github-workflow-deploy'); ?></h3>
             <button id="build_button" class="button button-primary" name="submit" type="submit">
-                <?php _e('Build Site', 'vercel-deploy-hooks'); ?>
+                <?php _e('Build Site', 'github-workflow-deploy'); ?>
             </button>
             <br>
             <p id="build_status" style="font-size: 12px; margin: 16px 0;">
@@ -116,7 +134,7 @@ class vdhp_vercel_webhook_deploy
                 <li id="build_status_createdAt" style="display:none"></li>
             </ul>
             </p>
-            <p style="font-size: 12px">*<?php _e('Do not abuse the Build Site button', 'vercel-deploy-hooks'); ?>*</p>
+            <p style="font-size: 12px">*<?php _e('Do not abuse the Build Site button', 'github-workflow-deploy'); ?>*</p>
             <br>
         </div>
         <?php
@@ -130,8 +148,8 @@ class vdhp_vercel_webhook_deploy
     public function plugin_settings_schedule_content()
     { ?>
         <div class="wrap">
-            <h1><?php _e('Schedule vercel Builds', 'vercel-deploy-hooks'); ?></h1>
-            <p><?php _e('This section allows regular vercel builds to be scheduled.', 'vercel-deploy-hooks'); ?></p>
+            <h1><?php _e('Schedule Deploys', 'github-workflow-deploy'); ?></h1>
+            <p><?php _e('This section allows regular deploys to be scheduled.', 'github-workflow-deploy'); ?></p>
             <hr>
 
             <?php
@@ -141,8 +159,8 @@ class vdhp_vercel_webhook_deploy
 
             <form method="POST" action="options.php">
                 <?php
-                settings_fields('schedule_webhook_fields');
-                do_settings_sections('schedule_webhook_fields');
+                settings_fields('schedule_deploy');
+                do_settings_sections('schedule_deploy');
                 submit_button();
                 ?>
             </form>
@@ -157,7 +175,7 @@ class vdhp_vercel_webhook_deploy
     public function plugin_settings_developer_content()
     { ?>
         <div class="wrap">
-            <h1><?php _e('Settings', 'vercel-deploy-hooks'); ?></h1>
+            <h1><?php _e('Settings', 'github-workflow-deploy'); ?></h1>
             <hr>
 
             <?php
@@ -173,12 +191,9 @@ class vdhp_vercel_webhook_deploy
             </form>
 
             <footer>
-                <h3><?php _e('Extra Info', 'vercel-deploy-hooks'); ?></h3>
+                <h3><?php _e('Extra Info', 'github-workflow-deploy'); ?></h3>
                 <p>
-                    <a href="https://github.com/aderaaij/wp-vercel-deploy-hooks"><?php _e('Plugin repository on Github', 'vercel-deploy-hooks'); ?></a>
-                </p>
-                <p>
-                    <a href="https://vercel.com/docs/more/deploy-hooks"><?php _e('Vercel Deploy Hooks Documentation', 'vercel-deploy-hooks'); ?></a>
+                    <a href="https://github.com/TamirHen/wp-github-workflow-hook"><?php _e('Plugin repository on Github', 'github-workflow-deploy'); ?></a>
                 </p>
             </footer>
 
@@ -192,11 +207,6 @@ class vdhp_vercel_webhook_deploy
      **/
     public function run_the_mighty_javascript()
     {
-        // TODO: split up javascript to allow to be dynamically imported as needed
-        // $screen = get_current_screen();
-        // if ( $screen && $screen->parent_base != 'developer_webhook_fields' && $screen->parent_base != 'deploy_webhook_fields_sub' ) {
-        //     return;
-        // }
         ?>
         <script type="text/javascript">
             console.log('run_the_mighty_javascript');
@@ -204,22 +214,24 @@ class vdhp_vercel_webhook_deploy
                 var _this = this;
                 $(".deploy_page_developer_webhook_fields td > input").css("width", "100%");
 
-                var webhook_url = '<?php echo($this->get_webhook_address()) ?>';
-                var vercel_site_id = '<?php echo(get_option('vercel_site_id')) ?>';
+                const webhook_url = '<?php echo($this->get_webhook_address()) ?>';
+                const github_access_token = '<?php echo($this->get_github_access_token()) ?>';
+                const github_deploy_branch = '<?php echo($this->get_github_deploy_branch()) ?>';
 
-
-                function vercelDeploy() {
+                function githubDeploy() {
                     return $.ajax({
                         type: "POST",
                         url: webhook_url,
                         dataType: "json",
+                        data: { ref: github_deploy_branch },
+                        headers: { Authorization: `Bearer ${github_access_token}` }
                     })
                 }
 
                 $("#build_button").on("click", function (e) {
                     e.preventDefault();
 
-                    vercelDeploy().done(function (res) {
+                    githubDeploy().done(function (res) {
                         console.log("success")
                         $("#build_status").html('Building in progress');
                         $("#build_status_id").removeAttr('style');
@@ -235,7 +247,7 @@ class vdhp_vercel_webhook_deploy
                         })
                 });
 
-                $(document).on('click', '#wp-admin-bar-vercel-deploy-button', function (e) {
+                $(document).on('click', '#wp-admin-bar-github-deploy-button', function (e) {
                     e.preventDefault();
 
                     var $button = $(this),
@@ -247,7 +259,7 @@ class vdhp_vercel_webhook_deploy
 
                     $button.addClass('running').css('opacity', '0.5');
 
-                    vercelDeploy().done(function () {
+                    githubDeploy().done(function () {
                         var $badge = $('#admin-bar-vercel-deploy-status-badge');
 
                         $button.removeClass('running');
@@ -278,8 +290,8 @@ class vdhp_vercel_webhook_deploy
     public function create_plugin_capabilities()
     {
         $role = get_role('administrator');
-        $role->add_cap('vercel_deploy_capability', true);
-        $role->add_cap('vercel_adjust_settings_capability', true);
+        $role->add_cap('deploy_capability', true);
+        $role->add_cap('adjust_settings_capability', true);
     }
 
     /**
@@ -289,11 +301,11 @@ class vdhp_vercel_webhook_deploy
      **/
     public function create_plugin_settings_page()
     {
-        if (current_user_can('vercel_deploy_capability')) {
-            $page_title = __('Deploy to vercel', 'vercel-deploy-hooks');
-            $menu_title = __('Deploy', 'vercel-deploy-hooks');
-            $capability = 'vercel_deploy_capability';
-            $slug = 'deploy_webhook_fields';
+        if (current_user_can('deploy_capability')) {
+            $page_title = __('Manual Deploy', 'github-workflow-deploy');
+            $menu_title = __('Deploy', 'github-workflow-deploy');
+            $capability = 'deploy_capability';
+            $slug = 'manual_deploy';
             $callback = array($this, 'plugin_settings_page_content');
             $icon = 'dashicons-admin-plugins';
             $position = 100;
@@ -301,20 +313,20 @@ class vdhp_vercel_webhook_deploy
             add_menu_page($page_title, $menu_title, $capability, $slug, $callback, $icon, $position);
         }
 
-        if (current_user_can('vercel_adjust_settings_capability')) {
-            $sub_page_title = __('Schedule Builds', 'vercel-deploy-hooks');
-            $sub_menu_title = __('Schedule Builds', 'vercel-deploy-hooks');
-            $sub_capability = 'vercel_adjust_settings_capability';
-            $sub_slug = 'schedule_webhook_fields';
+        if (current_user_can('adjust_settings_capability')) {
+            $sub_page_title = __('Schedule Builds', 'github-workflow-deploy');
+            $sub_menu_title = __('Schedule Builds', 'github-workflow-deploy');
+            $sub_capability = 'adjust_settings_capability';
+            $sub_slug = 'schedule_deploy';
             $sub_callback = array($this, 'plugin_settings_schedule_content');
 
             add_submenu_page($slug, $sub_page_title, $sub_menu_title, $sub_capability, $sub_slug, $sub_callback);
         }
 
-        if (current_user_can('vercel_adjust_settings_capability')) {
-            $sub_page_title = __('Settings', 'vercel-deploy-hooks');
-            $sub_menu_title = __('Settings', 'vercel-deploy-hooks');
-            $sub_capability = 'vercel_adjust_settings_capability';
+        if (current_user_can('adjust_settings_capability')) {
+            $sub_page_title = __('Settings', 'github-workflow-deploy');
+            $sub_menu_title = __('Settings', 'github-workflow-deploy');
+            $sub_capability = 'adjust_settings_capability';
             $sub_slug = 'developer_webhook_fields';
             $sub_callback = array($this, 'plugin_settings_developer_content');
 
@@ -336,11 +348,11 @@ class vdhp_vercel_webhook_deploy
     {
         $schedules['weekly'] = array(
             'interval' => 604800,
-            'display' => __('Once Weekly', 'vercel-deploy-hooks')
+            'display' => __('Once Weekly', 'github-workflow-deploy')
         );
         $schedules['monthly'] = array(
             'interval' => 2635200,
-            'display' => __('Once a month', 'vercel-deploy-hooks')
+            'display' => __('Once a month', 'github-workflow-deploy')
         );
 
         return $schedules;
@@ -354,7 +366,7 @@ class vdhp_vercel_webhook_deploy
     public function admin_notice()
     { ?>
         <div class="notice notice-success is-dismissible">
-            <p><?php _e('Your settings have been updated!', 'vercel-deploy-hooks'); ?></p>
+            <p><?php _e('Your settings have been updated!', 'github-workflow-deploy'); ?></p>
         </div>
         <?php
     }
@@ -366,8 +378,8 @@ class vdhp_vercel_webhook_deploy
      **/
     public function setup_sections()
     {
-        add_settings_section('schedule_section', __('Scheduling Settings', 'vercel-deploy-hooks'), array($this, 'section_callback'), 'schedule_webhook_fields');
-        add_settings_section('developer_section', __('Webhook Settings', 'vercel-deploy-hooks'), array($this, 'section_callback'), 'developer_webhook_fields');
+        add_settings_section('schedule_section', __('Scheduling Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'schedule_deploy');
+        add_settings_section('developer_section', __('Webhook Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'developer_webhook_fields');
     }
 
     /**
@@ -379,7 +391,7 @@ class vdhp_vercel_webhook_deploy
     {
         switch ($arguments['id']) {
             case 'developer_section':
-                echo __('A Vercel Deploy hook URL is required to run this plugin', 'vercel-deploy-hooks');
+                echo __('A Deploy hook URL is required to run this plugin', 'github-workflow-deploy');
                 break;
         }
     }
@@ -397,37 +409,37 @@ class vdhp_vercel_webhook_deploy
         $fields = array(
             array(
                 'uid' => 'enable_scheduled_builds',
-                'label' => __('Enable Scheduled Events', 'vercel-deploy-hooks'),
+                'label' => __('Enable Scheduled Events', 'github-workflow-deploy'),
                 'section' => 'schedule_section',
                 'type' => 'checkbox',
                 'options' => array(
-                    'enable' => __('Enable', 'vercel-deploy-hooks'),
+                    'enable' => __('Enable', 'github-workflow-deploy'),
                 ),
                 'default' => array()
             ),
             array(
                 'uid' => 'select_time_build',
-                'label' => __('Select Time to Build', 'vercel-deploy-hooks'),
+                'label' => __('Select Time to Deploy', 'github-workflow-deploy'),
                 'section' => 'schedule_section',
                 'type' => 'time',
                 'default' => '00:00'
             ),
             array(
                 'uid' => 'select_schedule_builds',
-                'label' => __('Select Build Schedule', 'vercel-deploy-hooks'),
+                'label' => __('Select Build Schedule', 'github-workflow-deploy'),
                 'section' => 'schedule_section',
                 'type' => 'select',
                 'options' => array(
-                    'daily' => __('Daily', 'vercel-deploy-hooks'),
-                    'weekly' => __('Weekly', 'vercel-deploy-hooks'),
-                    'monthly' => __('Monthly', 'vercel-deploy-hooks'),
+                    'daily' => __('Daily', 'github-workflow-deploy'),
+                    'weekly' => __('Weekly', 'github-workflow-deploy'),
+                    'monthly' => __('Monthly', 'github-workflow-deploy'),
                 ),
                 'default' => array('week')
             )
         );
         foreach ($fields as $field) {
-            add_settings_field($field['uid'], $field['label'], array($this, 'field_callback'), 'schedule_webhook_fields', $field['section'], $field);
-            register_setting('schedule_webhook_fields', $field['uid']);
+            add_settings_field($field['uid'], $field['label'], array($this, 'field_callback'), 'schedule_deploy', $field['section'], $field);
+            register_setting('schedule_deploy', $field['uid']);
         }
     }
 
@@ -441,22 +453,36 @@ class vdhp_vercel_webhook_deploy
         $fields = array(
             array(
                 'uid' => 'webhook_address',
-                'label' => __('Vercel Deploy Hook URL', 'vercel-deploy-hooks'),
+                'label' => __('Deploy Hook URL', 'github-workflow-deploy'),
                 'section' => 'developer_section',
                 'type' => 'text',
-                'placeholder' => 'e.g. https://api.vercel.com/v1/integrations/deploy/QmcwKGEbAyFtfybXBxvuSjFT54dc5dRLmAYNB5jxxXsbeZ/hUg65Lj4CV',
+                'placeholder' => 'e.g. https://api.github.com/repos/GITHUB_NAME/REPO_NAME/actions/workflows/WORKFLOW_ID_OR_FILE_NAME/dispatches',
                 'default' => '',
                 'callback' => $this->is_using_constant_webhook() ? function ($data) {
-                    echo "Set by constant WP_VERCEL_WEBHOOK_ADDRESS as <code>" . WP_VERCEL_WEBHOOK_ADDRESS . "</code>";
+                    echo "Set by constant WP_WEBHOOK_ADDRESS as <code>" . WP_WEBHOOK_ADDRESS . "</code>";
                 } : null,
             ),
             array(
+                'uid' => 'github_access_token',
+                'label' => __('GitHub Access Token', 'github-workflow-deploy'),
+                'section' => 'developer_section',
+                'type' => 'text',
+                'default' => ''
+            ),
+            array(
+                'uid' => 'github_deploy_branch',
+                'label' => __('GitHub Deploy Branch', 'github-workflow-deploy'),
+                'section' => 'developer_section',
+                'type' => 'text',
+                'default' => 'main'
+            ),
+            array(
                 'uid' => 'enable_on_post_update',
-                'label' => __('Activate deploy on post update', 'vercel-deploy-hooks'),
+                'label' => __('Activate deploy on post update', 'github-workflow-deploy'),
                 'section' => 'developer_section',
                 'type' => 'checkbox',
                 'options' => array(
-                    'enable' => __('Enable', 'vercel-deploy-hooks'),
+                    'enable' => __('Enable', 'github-workflow-deploy'),
                 ),
                 'default' => array()
             ),
@@ -470,7 +496,7 @@ class vdhp_vercel_webhook_deploy
                 $field['callback'] ?? array($this, 'field_callback'),
                 'developer_webhook_fields',
                 $field['section'],
-                $field,
+                $field
             );
             register_setting('developer_webhook_fields', $field['uid']);
         }
@@ -539,12 +565,12 @@ class vdhp_vercel_webhook_deploy
      **/
     public function add_to_admin_bar($admin_bar)
     {
-        if (current_user_can('vercel_deploy_capability')) {
+        if (current_user_can('deploy_capability')) {
             $webhook_address = get_option('webhook_address');
             if ($webhook_address) {
                 $button = array(
-                    'id' => 'vercel-deploy-button',
-                    'title' => '<div style="cursor: pointer;"><span class="ab-icon dashicons dashicons-hammer"></span> <span class="ab-label">' . __('Deploy Site', 'vercel-deploy-hooks') . '</span></div>'
+                    'id' => 'github-deploy-button',
+                    'title' => '<div style="cursor: pointer;"><span class="ab-icon dashicons dashicons-hammer"></span> <span class="ab-label">' . __('Deploy Site', 'github-workflow-deploy') . '</span></div>'
                 );
                 $admin_bar->add_node($button);
             }
@@ -583,11 +609,11 @@ class vdhp_vercel_webhook_deploy
     {
         $enable_builds = get_option('enable_scheduled_builds');
         if ($enable_builds) {
-            if (!wp_next_scheduled('scheduled_vercel_build')) {
+            if (!wp_next_scheduled('scheduled_build')) {
                 $schedule = get_option('select_schedule_builds');
                 $set_time = get_option('select_time_build');
                 $timestamp = strtotime($set_time);
-                wp_schedule_event($timestamp, $schedule[0], 'scheduled_vercel_build');
+                wp_schedule_event($timestamp, $schedule[0], 'scheduled_build');
             }
         } else {
             $this->deactivate_scheduled_cron();
@@ -603,23 +629,31 @@ class vdhp_vercel_webhook_deploy
     public function deactivate_scheduled_cron()
     {
         // find out when the last event was scheduled
-        $timestamp = wp_next_scheduled('scheduled_vercel_build');
+        $timestamp = wp_next_scheduled('scheduled_build');
         // unschedule previous event if any
-        wp_unschedule_event($timestamp, 'scheduled_vercel_build');
+        wp_unschedule_event($timestamp, 'scheduled_build');
     }
 
     /**
      *
-     * Trigger vercel Build
+     * Trigger deploy
      *
      * @since 1.0.0
      **/
-    public function fire_vercel_webhook()
+    public function fire_github_deploy()
     {
         $webhook_url = $this->get_webhook_address();
+        $github_access_token = $this->get_github_access_token();
+        $github_deploy_branch = $this->get_github_deploy_branch();
         if ($webhook_url) {
             $options = array(
                 'method' => 'POST',
+                'headers' => array(
+                        'Authorization' => 'Bearer ' . $github_access_token
+                ),
+                'body' => array(
+                        'ref' => $github_deploy_branch
+                )
             );
             return wp_remote_post($webhook_url, $options);
         }
@@ -633,7 +667,7 @@ class vdhp_vercel_webhook_deploy
         $rest = defined('REST_REQUEST') && REST_REQUEST;
         // We only want to trigger the webhook only if we transition from or to publish state.
         if ($enable_builds && !$rest && ($new_status === 'publish' || $old_status === 'publish')) {
-            $this->fire_vercel_webhook();
+            $this->fire_github_deploy();
         }
     }
 
@@ -641,9 +675,9 @@ class vdhp_vercel_webhook_deploy
     {
         $enable_builds = get_option('enable_on_post_update');
         if ($enable_builds) {
-            $this->fire_vercel_webhook();
+            $this->fire_github_deploy();
         }
     }
 }
 
-new vdhp_vercel_webhook_deploy;
+new github_workflow_deploy;

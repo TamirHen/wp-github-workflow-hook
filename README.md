@@ -1,6 +1,6 @@
 # WP GitHub Deploy Hooks
 
-A WordPress plugin to trigger a GitHub action to deploy a static site
+A WordPress plugin for triggering a GitHub action to deploy a static site
 
 ## ✅ Features
 
