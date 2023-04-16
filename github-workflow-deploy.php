@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @package GitHub Trigger Workflow
+ * @package GitHub Workflow Deploy
  */
 
 /*
@@ -120,7 +120,7 @@ class github_workflow_deploy
     public function plugin_settings_page_content()
     { ?>
         <div class="wrap">
-            <h2><?php _e('GitHub Trigger Workflow', 'github-workflow-deploy'); ?></h2>
+            <h2><?php _e('Deploy Website', 'github-workflow-deploy'); ?></h2>
             <hr>
             <h3><?php _e('Build Website', 'github-workflow-deploy'); ?></h3>
             <button id="build_button" class="button button-primary" name="submit" type="submit">
@@ -379,7 +379,7 @@ class github_workflow_deploy
     public function setup_sections()
     {
         add_settings_section('schedule_section', __('Scheduling Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'schedule_deploy');
-        add_settings_section('developer_section', __('Webhook Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'developer_webhook_fields');
+        add_settings_section('developer_settings_section', __('Webhook Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'developer_webhook_fields');
     }
 
     /**
@@ -390,7 +390,7 @@ class github_workflow_deploy
     public function section_callback($arguments)
     {
         switch ($arguments['id']) {
-            case 'developer_section':
+            case 'developer_settings_section':
                 echo __('A Deploy hook URL is required to run this plugin', 'github-workflow-deploy');
                 break;
         }
@@ -454,7 +454,7 @@ class github_workflow_deploy
             array(
                 'uid' => 'webhook_address',
                 'label' => __('Deploy Hook URL', 'github-workflow-deploy'),
-                'section' => 'developer_section',
+                'section' => 'developer_settings_section',
                 'type' => 'text',
                 'placeholder' => 'e.g. https://api.github.com/repos/GITHUB_NAME/REPO_NAME/actions/workflows/WORKFLOW_ID_OR_FILE_NAME/dispatches',
                 'default' => '',
@@ -465,21 +465,21 @@ class github_workflow_deploy
             array(
                 'uid' => 'github_access_token',
                 'label' => __('GitHub Access Token', 'github-workflow-deploy'),
-                'section' => 'developer_section',
+                'section' => 'developer_settings_section',
                 'type' => 'text',
                 'default' => ''
             ),
             array(
                 'uid' => 'github_deploy_branch',
                 'label' => __('GitHub Deploy Branch', 'github-workflow-deploy'),
-                'section' => 'developer_section',
+                'section' => 'developer_settings_section',
                 'type' => 'text',
                 'default' => 'main'
             ),
             array(
                 'uid' => 'enable_on_post_update',
                 'label' => __('Activate deploy on post update', 'github-workflow-deploy'),
-                'section' => 'developer_section',
+                'section' => 'developer_settings_section',
                 'type' => 'checkbox',
                 'options' => array(
                     'enable' => __('Enable', 'github-workflow-deploy'),
