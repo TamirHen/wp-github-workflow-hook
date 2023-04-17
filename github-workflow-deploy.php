@@ -76,22 +76,13 @@ class github_workflow_deploy
         add_action('transition_post_status', array($this, 'vb_webhook_post'), 10, 3);
     }
 
-    public function is_using_constant_webhook()
-    {
-        return defined("WP_WEBHOOK_ADDRESS") && !empty(WP_WEBHOOK_ADDRESS);
-    }
-
     /**
      * Gets the webhook address by constant or by settings, in that order
      * @return ?string
      */
     public function get_webhook_address()
     {
-        if ($this->is_using_constant_webhook()) {
-            return WP_WEBHOOK_ADDRESS;
-        } else {
-            return get_option('webhook_address');
-        }
+        return "https://api.github.com/repos/".get_option('github_username')."/".get_option('github_repo')."/actions/workflows/".get_option('github_workflow_id_or_file_name');
     }
 
     /**
@@ -128,14 +119,8 @@ class github_workflow_deploy
             </button>
             <br>
             <p id="build_status" style="font-size: 12px; margin: 16px 0;">
-            <ul>
-                <li id="build_status_id" style="display:none"></li>
-                <li id="build_status_state" style="display:none"></li>
-                <li id="build_status_createdAt" style="display:none"></li>
-            </ul>
+            <p id="run_status" style="font-size: 12px; margin: 16px 0;">
             </p>
-            <p style="font-size: 12px">*<?php _e('Do not abuse the Build Site button', 'github-workflow-deploy'); ?>*</p>
-            <br>
         </div>
         <?php
     }
@@ -150,6 +135,14 @@ class github_workflow_deploy
         <div class="wrap">
             <h1><?php _e('Schedule Deploys', 'github-workflow-deploy'); ?></h1>
             <p><?php _e('This section allows regular deploys to be scheduled.', 'github-workflow-deploy'); ?></p>
+            <p>
+                <?php _e('Please make sure you schedule your deployments according to your ', 'github-workflow-deploy'); ?>
+                <strong><?php _e('site\'s timezone', 'github-workflow-deploy'); ?></strong>
+                <?php _e(' (and not your computer\'s).', 'github-workflow-deploy'); ?>
+                <br>
+                <?php _e('To double check your site\'s timezone go to ', 'github-workflow-deploy'); ?>
+                <a href="/wp-admin/options-general.php"><?php _e('Settings -> General', 'github-workflow-deploy'); ?></a>
+            </p>
             <hr>
 
             <?php
@@ -212,45 +205,77 @@ class github_workflow_deploy
             console.log('run_the_mighty_javascript');
             jQuery(document).ready(function ($) {
                 var _this = this;
-                $(".deploy_page_developer_webhook_fields td > input").css("width", "100%");
+                $(".deploy_page_developer_webhook_fields td > input").css({"width": "100%", "max-width": "400px"});
 
                 const webhook_url = '<?php echo($this->get_webhook_address()) ?>';
                 const github_access_token = '<?php echo($this->get_github_access_token()) ?>';
                 const github_deploy_branch = '<?php echo($this->get_github_deploy_branch()) ?>';
 
+                function sleep(ms) {
+                    return new Promise(resolve => setTimeout(resolve, ms));
+                }
+
                 function githubDeploy() {
                     return $.ajax({
                         type: "POST",
-                        url: webhook_url,
+                        url: `${webhook_url}/dispatches`,
                         dataType: "json",
-                        data: { ref: github_deploy_branch },
+                        data: JSON.stringify({"ref": github_deploy_branch}),
+                        headers: { Authorization: `Bearer ${github_access_token}` }
+                    })
+                }
+
+                function githubWorkflowStatus() {
+                    return $.ajax({
+                        type: "GET",
+                        url: `${webhook_url}/runs`,
+                        dataType: "json",
                         headers: { Authorization: `Bearer ${github_access_token}` }
                     })
                 }
 
                 $("#build_button").on("click", function (e) {
                     e.preventDefault();
-
-                    githubDeploy().done(function (res) {
-                        console.log("success")
-                        $("#build_status").html('Building in progress');
-                        $("#build_status_id").removeAttr('style');
-                        $("#build_status_id").html('<b>ID</b>: ' + res.job.id);
-                        $("#build_status_state").removeAttr('style');
-                        $("#build_status_state").html('<b>State</b>: ' + res.job.state);
-                        $("#build_status_createdAt").removeAttr('style');
-                        $("#build_status_createdAt").html('<b>Created At</b>: ' + new Date(res.job.createdAt).toLocaleString());
+                    $("#build_status").html(null);
+                    $("#run_status").html(null);
+                    const $button = $(this);
+                    let buildConclusion = null;
+                    githubDeploy().done(async function (res) {
+                        $button.attr('disabled', true);
+                        $("#build_status").html('Building in progress. Do not refresh this page if you wanna track deployment status.');
+                        while (!buildConclusion) {
+                            await sleep(5000) // 5 seconds
+                            const status = githubWorkflowStatus()
+                                .done(res => {
+                                    const workflow_run = res.workflow_runs[0]
+                                    if (workflow_run.status !== "queued" && workflow_run.status !== "in_progress") {
+                                        $("#build_status").html(`Website build finished with status: ${workflow_run.status}`);
+                                        $("#run_status").html(`Deployment status: ${workflow_run.conclusion}`);
+                                        buildConclusion = workflow_run.conclusion
+                                        return
+                                    }
+                                    $("#run_status").html(`Deployment status: ${workflow_run.status}`);
+                                })
+                                .fail(err => {
+                                    console.error("error res => ", this)
+                                    $("#build_status").html('There was an error tracking the build. Please wait a few minutes and check manually if the build was successful.', this);
+                                    buildConclusion = 'unknown'
+                                })
+                        }
+                        // sleep 5 seconds to allow api get updated
+                        await sleep(5000)
+                        $button.attr('disabled', false);
                     })
-                        .fail(function () {
+                        .fail(function (err) {
                             console.error("error res => ", this)
-                            $("#build_status").html('There seems to be an error with the build', this);
+                            $("#build_status").html('There seems to be an error with the build.', this);
                         })
                 });
 
                 $(document).on('click', '#wp-admin-bar-github-deploy-button', function (e) {
                     e.preventDefault();
 
-                    var $button = $(this),
+                    const $button = $(this),
                         $buttonContent = $button.find('.ab-item:first');
 
                     if ($button.hasClass('deploying') || $button.hasClass('running')) {
@@ -379,7 +404,8 @@ class github_workflow_deploy
     public function setup_sections()
     {
         add_settings_section('schedule_section', __('Scheduling Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'schedule_deploy');
-        add_settings_section('developer_settings_section', __('Webhook Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'developer_webhook_fields');
+        add_settings_section('developer_settings_section', __('GitHub Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'developer_webhook_fields');
+        add_settings_section('webhook_settings_section', __('Webhook Settings', 'github-workflow-deploy'), array($this, 'section_callback'), 'developer_webhook_fields');
     }
 
     /**
@@ -452,21 +478,35 @@ class github_workflow_deploy
     {
         $fields = array(
             array(
-                'uid' => 'webhook_address',
-                'label' => __('Deploy Hook URL', 'github-workflow-deploy'),
+                'uid' => 'github_username',
+                'label' => __('GitHub Username', 'github-workflow-deploy'),
                 'section' => 'developer_settings_section',
                 'type' => 'text',
-                'placeholder' => 'e.g. https://api.github.com/repos/GITHUB_NAME/REPO_NAME/actions/workflows/WORKFLOW_ID_OR_FILE_NAME/dispatches',
-                'default' => '',
-                'callback' => $this->is_using_constant_webhook() ? function ($data) {
-                    echo "Set by constant WP_WEBHOOK_ADDRESS as <code>" . WP_WEBHOOK_ADDRESS . "</code>";
-                } : null,
+                'placeholder' => '',
+                'default' => ''
+            ),
+            array(
+                'uid' => 'github_repo',
+                'label' => __('GitHub Repository', 'github-workflow-deploy'),
+                'section' => 'developer_settings_section',
+                'type' => 'text',
+                'placeholder' => '',
+                'default' => ''
+            ),
+            array(
+                'uid' => 'github_workflow_id_or_file_name',
+                'label' => __('GitHub Workflow ID or File Name', 'github-workflow-deploy'),
+                'section' => 'developer_settings_section',
+                'type' => 'text',
+                'placeholder' => '',
+                'default' => ''
             ),
             array(
                 'uid' => 'github_access_token',
                 'label' => __('GitHub Access Token', 'github-workflow-deploy'),
                 'section' => 'developer_settings_section',
                 'type' => 'text',
+                'placeholder' => '',
                 'default' => ''
             ),
             array(
@@ -474,12 +514,13 @@ class github_workflow_deploy
                 'label' => __('GitHub Deploy Branch', 'github-workflow-deploy'),
                 'section' => 'developer_settings_section',
                 'type' => 'text',
+                'placeholder' => '',
                 'default' => 'main'
             ),
             array(
                 'uid' => 'enable_on_post_update',
                 'label' => __('Activate deploy on post update', 'github-workflow-deploy'),
-                'section' => 'developer_settings_section',
+                'section' => 'webhook_settings_section',
                 'type' => 'checkbox',
                 'options' => array(
                     'enable' => __('Enable', 'github-workflow-deploy'),
@@ -646,16 +687,19 @@ class github_workflow_deploy
         $github_access_token = $this->get_github_access_token();
         $github_deploy_branch = $this->get_github_deploy_branch();
         if ($webhook_url) {
-            $options = array(
+            $body = [
+                'ref' => $github_deploy_branch
+            ];
+            $body = wp_json_encode( $body );
+            $options = [
                 'method' => 'POST',
-                'headers' => array(
-                        'Authorization' => 'Bearer ' . $github_access_token
-                ),
-                'body' => array(
-                        'ref' => $github_deploy_branch
-                )
-            );
-            return wp_remote_post($webhook_url, $options);
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $github_access_token
+                ],
+                'body' => $body,
+                'data_format' => 'body',
+            ];
+            return wp_remote_post($webhook_url . "/dispatches", $options);
         }
         return false;
     }
