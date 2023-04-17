@@ -126,7 +126,7 @@ class github_workflow_deploy
     }
 
     /**
-     * Schedule Builds (subpage) markup
+     * Schedule Deploys (subpage) markup
      *
      * @since 1.0.0
      **/
@@ -339,8 +339,8 @@ class github_workflow_deploy
         }
 
         if (current_user_can('adjust_settings_capability')) {
-            $sub_page_title = __('Schedule Builds', 'github-workflow-deploy');
-            $sub_menu_title = __('Schedule Builds', 'github-workflow-deploy');
+            $sub_page_title = __('Schedule Deploys', 'github-workflow-deploy');
+            $sub_menu_title = __('Schedule Deploys', 'github-workflow-deploy');
             $sub_capability = 'adjust_settings_capability';
             $sub_slug = 'schedule_deploy';
             $sub_callback = array($this, 'plugin_settings_schedule_content');
